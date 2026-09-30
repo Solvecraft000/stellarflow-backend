@@ -84,5 +84,9 @@ celery_app.conf.update(
             "task": "app.tasks.generate_treasury_yield_report",
             "schedule": crontab(minute="0", hour="0", day_of_month="1"),
         },
+        "sweep-treasury-staked-yield": {
+            "task": "app.tasks.sweep_treasury_staked_yield",
+            "schedule": crontab(minute="*/15"),
+        },
     },
 )
