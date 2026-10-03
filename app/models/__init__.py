@@ -781,7 +781,7 @@ from app.models.shielded import MerkleRoot, ShieldedCommitment, SpentNullifier  
 from app.models.allocation import CapitalAllocation, RebalancingHistory, VaultStrategy  # noqa: E402
 
 # ---------------------------------------------------------------------------
-# Protocol Treasury Yield Auto-Staking ORM models
+# Protocol Treasury Yield Auto-Staking and Sweeper ORM models
 # ---------------------------------------------------------------------------
 
 from app.models.treasury import TreasuryYieldAllocation, TreasuryYieldReport  # noqa: E402
