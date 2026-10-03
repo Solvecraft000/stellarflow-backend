@@ -42,6 +42,23 @@ def poll_anchor_settlement_statuses(self: DatabaseTask) -> int:
     return asyncio.run(AnchorStatusPoller().poll_once())
 
 
+@celery_app.task(
+    bind=True,
+    base=DatabaseTask,
+    name="app.tasks.monitor_fiat_settlement_latency",
+    autoretry_for=(OSError, asyncpg.PostgresError),
+    retry_backoff=True,
+    max_retries=3,
+)
+def monitor_fiat_settlement_latency(self: DatabaseTask, lookback_hours: int = 24) -> Dict[str, Any]:
+    """Monitor fiat settlement latency across regional anchors, deactivate >4h, and re-route."""
+    from app.services.fiat_settlement import DatabaseSettlementLatencyWorker
+    database_url = DatabaseTask._database_url or os.getenv("DATABASE_URL") or os.getenv("DB_URL")
+    worker = DatabaseSettlementLatencyWorker(database_url=database_url)
+    return asyncio.run(worker.run_evaluation_cycle(lookback_hours=lookback_hours))
+
+
+
 async def _aggregate(granularity: str, cutoff: datetime) -> int:
     database_url = DatabaseTask._database_url
     if not database_url:
@@ -946,3 +963,43 @@ async def _auto_rebalance_capital_async() -> Dict[str, Any]:
                 "message": "Drift below threshold; no rebalancing needed",
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
+
+
+# ---------------------------------------------------------------------------
+# Issue #973 — SLA Monitoring and Compliance Recording
+# ---------------------------------------------------------------------------
+
+@celery_app.task(
+    bind=True,
+    name="sla.record_metrics",
+    autoretry_for=(OSError, asyncpg.PostgresError),
+    retry_backoff=True,
+    max_retries=3,
+)
+def record_sla_metrics_task(self) -> Dict[str, Any]:
+    """Record SLA compliance metrics for all monitored endpoints.
+    
+    This task runs every 5 minutes (configured in Celery Beat schedule) to:
+    1. Aggregate Prometheus metrics over a 5-minute window
+    2. Calculate latency percentiles (P50, P95, P99)
+    3. Compute SLA compliance scores
+    4. Write records to the endpoint_sla_metrics table
+    5. Check for SLA violations and trigger alerts
+    
+    Returns:
+        Dictionary with recording statistics
+    """
+    from app.services.sla_recorder import record_sla_metrics
+    
+    try:
+        # Run the async function
+        stats = asyncio.run(record_sla_metrics())
+        return {
+            "status": "success",
+            "stats": stats,
+        }
+    except Exception as exc:
+        return {
+            "status": "error",
+            "error": str(exc),
+        }
